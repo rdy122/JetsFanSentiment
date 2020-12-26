@@ -1,0 +1,104 @@
+install.packages("rtweet")
+library(rtweet)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(ggplot2)
+install.packages("tidytext")
+library(tidytext)
+install.packages("syuzhet")
+library(syuzhet)
+install.packages("wordcloud")
+library(wordcloud)
+install.packages("tm")
+library(tm)
+install.packages("textdata")
+library(textdata)
+
+#Accessed my Twitter API
+
+search_tweets(
+  q = "@nyjets filter:replies",
+  n = 100,
+  token = token)
+  
+#Converted "Created_at" field to Time
+ Sys.setlocale("LC_TIME", "English")
+ nyjtweets1$created_at <- as_datetime(as.POSIXct(nyjtweets1$created_at, "Y-%m-%d %H:%M%OS"), tz = "EST")
+  
+#Filtered replies and time period
+ jetstweets <- nyjtweets1 %>% filter(created_at >= '2020-12-20 16:00:00' & created_at <= '2020-12-20 21:00:00')
+ jetsreplies <- jetstweets %>% filter(reply_to_screen_name=="nyjets")
+ 
+#Filtered out symbols and words
+jetsreplies$text <-  gsub("https\\S*", "", jetsreplies$text)
+jetsreplies$text <-  gsub("@\\S*", "", jetsreplies$text) 
+jetsreplies$text  <-  gsub("amp", "", jetsreplies$text) 
+jetsreplies$text  <-  gsub("[\r\n]", "", jetsreplies$text)
+jetsreplies$text  <-  gsub("[[:punct:]]", "", jetsreplies$text)
+jetsreplies$text <- gsub("fuck", "bleep", jetsreplies$text, ignore.case = TRUE)
+
+#Broke down into words and filtered out stop words
+jetsreplies_words <- jetsreplies %>%
+  select(text) %>%
+  unnest_tokens(word, text)
+jetsreplies_words <- jetsreplies_words %>%
+  anti_join(stop_words)
+ 
+#Word count plot
+  jetsreplies_words %>% 
+  count(word, sort = TRUE) %>%
+  top_n(35) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  labs(y = "Count",
+       x = "Unique words",
+       title = "Top-20 frequent words in @nyjets replies")
+    
+#word cloud      
+  jetswords <- jetsreplies_words %>% count(word, sort=TRUE)
+  set.seed(1234)
+  wordcloud(jetswords$word, freq=jetswords$n, max.words = 55, random.order=FALSE, colors="green4", ordered.colors=TRUE)
+
+#sentiment analysis
+  bing_jets <- jetsreplies_words %>%
+    inner_join(get_sentiments("bing")) %>%
+    count(word, sentiment, sort = TRUE) %>%
+    ungroup()
+  bing_jets
+  
+  jetsreplies1 <- jetstweets %>% filter(reply_to_screen_name=="nyjets")
+jetsreplies1$text <-  gsub("https\\S*", "", jetsreplies$text)
+jetsreplies1$text <-  gsub("@\\S*", "", jetsreplies$text) 
+jetsreplies1$text  <-  gsub("amp", "", jetsreplies$text) 
+jetsreplies1$text  <-  gsub("[\r\n]", "", jetsreplies$text)
+jetsreplies1$text  <-  gsub("[[:punct:]]", "", jetsreplies$text)
+jetsreplies1$text <- gsub("fan", "", jetsreplies$text, ignore.case = TRUE)
+jetsreplies1$text <- gsub("win", "", jetsreplies$text, ignore.case = TRUE)
+jetsreplies1$text <- gsub("won", "", jetsreplies$text, ignore.case = TRUE)
+jetsreplies1$text <- gsub("los", "", jetsreplies$text, ignore.case = TRUE)
+jetsreplies_words1 <- jetsreplies1 %>%
+  select(text, created_at) %>%
+  unnest_tokens(word, text)
+jetsreplies_words1 <- jetsreplies_words1 %>%
+  anti_join(stop_words)
+  
+  sentiment_dataset <- get_sentiments("afinn")
+jets_afinn<- merge(jetsreplies_words1, sentiment_dataset, by = 'word')
+jets_afinn$word <- NULL
+jets_afinn$min <- format(round(jets_afinn$created_at, units="mins"), format="%H:%M")
+
+pivot <- jets_afinn %>%
+group_by(min) %>%
+summarise(sentiment = sum(value))
+
+ggplot(pivot[-1,], aes(x = min, y = sentiment)) + geom_line(group = 1) + geom_point() + labs(title = paste0('Sentiment of @nyjets Replies during NYJ-LAR Game'),
+subtitle = paste0(pivot$min[2],' - ',pivot$min[nrow(pivot)],' on ', format(jets_afinn$created_at[1], '%B %d, %Y')),
+x = 'Time', y = 'Total Sentiment')
+#Used Tableau for final chart
+  
+  
